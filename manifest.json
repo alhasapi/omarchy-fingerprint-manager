@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "alhasapi.fingerprint",
+  "name": "Fingerprint",
+  "version": "1.0.0",
+  "author": "alhasapi",
+  "description": "Enroll fingerprints and manage which tasks accept fingerprint auth",
+  "kinds": ["panel"],
+  "entryPoints": { "panel": "Panel.qml" }
+}

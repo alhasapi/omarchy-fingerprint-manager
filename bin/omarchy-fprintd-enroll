@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Enroll one finger, streaming one JSON line per EnrollStatus signal.
+
+Usage: omarchy-fprintd-enroll <finger-name>
+
+finger-name must be one of the ten canonical fprintd names (see
+_fprintd_common.FINGER_NAMES) -- validated here before touching D-Bus,
+matching the plan's client-side check ahead of the D-Bus-side
+InvalidFingername backstop.
+
+Cancellation: the QML side sets Process.running = false, which sends
+SIGTERM. The handler below calls EnrollStop()/Release() before exiting so a
+cancelled enrollment never leaves the device claimed.
+"""
+
+import os
+import signal
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import dbus
+import dbus.mainloop.glib
+from gi.repository import GLib
+
+import _fprintd_common as common
+
+dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+
+
+def main():
+    if len(sys.argv) != 2:
+        common.emit_error("BadArgs", "usage: omarchy-fprintd-enroll <finger-name>")
+        sys.exit(1)
+
+    finger_name = sys.argv[1]
+    if finger_name not in common.FINGER_NAMES:
+        common.emit_error("InvalidFingername", "not a canonical finger name: %s" % finger_name)
+        sys.exit(1)
+
+    bus = common.system_bus()
+    try:
+        _device_path, device_obj = common.get_default_device(bus)
+    except dbus.DBusException as exc:
+        common.fail_and_exit(exc)
+        return
+
+    device_iface = dbus.Interface(device_obj, common.DEVICE_INTERFACE)
+    loop = GLib.MainLoop()
+
+    def on_enroll_status(result, done):
+        common.emit(str(result), done=bool(done))
+        if done:
+            loop.quit()
+
+    device_obj.connect_to_signal(
+        "EnrollStatus", on_enroll_status, dbus_interface=common.DEVICE_INTERFACE
+    )
+
+    def cleanup_and_exit(*_args):
+        try:
+            device_iface.EnrollStop()
+        except dbus.DBusException:
+            pass
+        try:
+            device_iface.Release()
+        except dbus.DBusException:
+            pass
+        loop.quit()
+
+    signal.signal(signal.SIGTERM, lambda *_: cleanup_and_exit())
+    signal.signal(signal.SIGINT, lambda *_: cleanup_and_exit())
+
+    try:
+        device_iface.Claim("")
+    except dbus.DBusException as exc:
+        common.fail_and_exit(exc)
+        return
+
+    try:
+        device_iface.EnrollStart(finger_name)
+    except dbus.DBusException as exc:
+        try:
+            device_iface.Release()
+        except dbus.DBusException:
+            pass
+        common.fail_and_exit(exc)
+        return
+
+    try:
+        loop.run()
+    finally:
+        try:
+            device_iface.EnrollStop()
+        except dbus.DBusException:
+            pass
+        try:
+            device_iface.Release()
+        except dbus.DBusException:
+            pass
+
+
+if __name__ == "__main__":
+    main()

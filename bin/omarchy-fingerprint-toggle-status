@@ -1,0 +1,20 @@
+#!/bin/bash
+# omarchy:hidden=true
+#
+# Reports which tasks currently accept fingerprint auth, by reading the same
+# three PAM files omarchy-fingerprint-toggle writes. Re-derives the exact
+# predicates already used by omarchy-remove-security-fingerprint and by the
+# lock screen's own fingerprintCheckProc
+# (/usr/share/omarchy/shell/plugins/lock/Service.qml), so this and those
+# always agree on "is fingerprint wired up for X".
+
+sudo_on="false"
+grep -q pam_fprintd.so /etc/pam.d/sudo 2>/dev/null && sudo_on="true"
+
+polkit_on="false"
+[[ -f /etc/pam.d/polkit-1 ]] && grep -q pam_fprintd.so /etc/pam.d/polkit-1 2>/dev/null && polkit_on="true"
+
+lock_on="false"
+[[ -f /etc/pam.d/omarchy-lock-fingerprint ]] && lock_on="true"
+
+echo "{\"event\":\"toggle-status\",\"sudo\":$sudo_on,\"polkit\":$polkit_on,\"lock\":$lock_on}"

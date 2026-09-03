@@ -1,0 +1,97 @@
+#!/bin/bash
+# Post-install step for the Fingerprint plugin.
+#
+# Omarchy gives a plugin no hook to do either of these things for itself:
+# `omarchy plugin add` copies files into ~/.config/omarchy/plugins/<id>/ and
+# stops there, and the menu only ever reads the vendor JSONC plus the user's
+# own extensions file. So this script exists, and has to be run once by hand:
+#
+#   1. Installs the polkit action the per-task toggles need, with this
+#      install's real path baked into exec.path.
+#   2. Adds a "Fingerprint Manager" row to the menu's Security submenu.
+#
+# Idempotent: re-running it re-installs the policy (cheap, and the right fix
+# after the plugin directory moves) and leaves an already-present menu row
+# alone.
+
+set -euo pipefail
+
+plugin_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+toggle_path="$plugin_dir/bin/omarchy-fingerprint-toggle"
+template="$plugin_dir/polkit/omarchy.fingerprint.toggle.policy.in"
+policy_dest=/usr/share/polkit-1/actions/omarchy.fingerprint.toggle.policy
+
+menu_file="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/extensions/omarchy-menu.jsonc"
+menu_id="setup.security.fingerprint-manager"
+menu_row='  "'"$menu_id"'": {"icon":"󰈷","label":"Fingerprint Manager","when":"omarchy-hw-fingerprint","action":"omarchy-shell shell summon alhasapi.fingerprint"},'
+
+# ---------- 1. polkit action ----------
+
+if [[ ! -f $template ]]; then
+  echo "error: missing polkit template at $template" >&2
+  exit 1
+fi
+if [[ ! -x $toggle_path ]]; then
+  echo "error: missing or non-executable $toggle_path" >&2
+  exit 1
+fi
+
+staged=$(mktemp)
+trap 'rm -f "$staged"' EXIT
+
+# The path lands inside an XML attribute, so escape the five XML entities
+# rather than assuming a well-behaved path. sed's own delimiter is | because
+# the path contains slashes.
+escaped_path=$(printf '%s' "$toggle_path" \
+  | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g")
+sed "s|@TOGGLE_PATH@|$escaped_path|g" "$template" > "$staged"
+
+if grep -q '@TOGGLE_PATH@' "$staged"; then
+  echo "error: failed to substitute the toggle path into the policy" >&2
+  exit 1
+fi
+
+echo "Installing polkit action to $policy_dest"
+echo "  exec.path -> $toggle_path"
+sudo install -Dm644 "$staged" "$policy_dest"
+
+# ---------- 2. menu row ----------
+
+if [[ ! -f $menu_file ]]; then
+  mkdir -p "$(dirname "$menu_file")"
+  printf '{\n}\n' > "$menu_file"
+  echo "Created $menu_file"
+fi
+
+if grep -q "\"$menu_id\"" "$menu_file"; then
+  echo "Menu row already present in $menu_file, leaving it alone"
+else
+  # This file is JSONC whose comments Omarchy ships as documentation, and
+  # MenuModel.js only strips comments that sit on their own line. Round-
+  # tripping it through a JSON parser would drop all of that, so insert
+  # textually: put the row just before the final closing brace. A trailing
+  # comma is fine -- MenuModel.js strips those (MenuModel.js:4) -- and keeps
+  # the file easy to append to by hand later.
+  closing_line=$(grep -n '^\s*}\s*$' "$menu_file" | tail -n 1 | cut -d: -f1)
+  if [[ -z ${closing_line:-} ]]; then
+    echo "error: could not find the closing brace in $menu_file" >&2
+    echo "       add this row by hand instead:" >&2
+    echo "$menu_row" >&2
+    exit 1
+  fi
+
+  staged_menu=$(mktemp)
+  {
+    head -n $((closing_line - 1)) "$menu_file"
+    echo ""
+    echo "  // Added by omarchy-fingerprint-install"
+    echo "$menu_row"
+    tail -n +"$closing_line" "$menu_file"
+  } > "$staged_menu"
+  mv "$staged_menu" "$menu_file"
+  echo "Added \"Fingerprint Manager\" to Security in $menu_file"
+fi
+
+echo
+echo "Done. Open it from the menu: Setup > Security > Fingerprint Manager"
+echo "If the row or the panel does not show up yet, run: omarchy restart shell"

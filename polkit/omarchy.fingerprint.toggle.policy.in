@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<!--
+  Template. bin/omarchy-fingerprint-install substitutes @TOGGLE_PATH@ with the
+  real path to bin/omarchy-fingerprint-toggle and installs the result into
+  /usr/share/polkit-1/actions/. polkit matches a pkexec'd binary to an action
+  by that exec.path annotation, so it has to be the absolute path this
+  particular install actually runs. That is why this ships as a template
+  rather than a finished file with somebody else's home directory baked in.
+-->
+<policyconfig>
+  <vendor>Omarchy Fingerprint Manager</vendor>
+  <vendor_url>https://github.com/alhasapi/omarchy-fingerprint-manager</vendor_url>
+  <icon_name>fprint</icon_name>
+  <action id="omarchy.fingerprint.toggle">
+    <description>Change which system tasks accept fingerprint authentication</description>
+    <message>Authentication is required to change fingerprint authentication settings</message>
+    <icon_name>fprint</icon_name>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@TOGGLE_PATH@</annotate>
+  </action>
+</policyconfig>

@@ -1,0 +1,42 @@
+#!/bin/bash
+# omarchy:hidden=true
+#
+# Reports whether a fingerprint reader is present and whether an
+# fprintd-compatible backend is already installed. This is the first thing
+# Panel.qml runs on open -- it decides which of the three panel states
+# (no-hardware / not-installed / ready) to render, before touching D-Bus at
+# all.
+#
+# hardware detection reuses omarchy-hw-fingerprint verbatim (same sysfs
+# vendor/product sniffing the setup wizard itself bails out on). Backend
+# detection re-derives the exact fingerprint_stack_present/pam_fprintd_present
+# predicates from omarchy-setup-security-fingerprint
+# (~/workspace/fing/omarchy-setup-security-fingerprint) rather than
+# reinventing them, so this script and the wizard always agree on "is a
+# backend installed".
+
+set -e
+
+pam_fprintd_present() {
+  local dir
+  for dir in /usr/lib/security /usr/lib64/security /lib/security; do
+    [[ -e "$dir/pam_fprintd.so" ]] && return 0
+  done
+  return 1
+}
+
+fingerprint_stack_present() {
+  omarchy-cmd-present fprintd-enroll fprintd-verify fprintd-list &&
+    pam_fprintd_present &&
+    [[ -f /usr/share/dbus-1/system-services/net.reactivated.Fprint.service ]]
+}
+
+hardware="false"
+omarchy-hw-fingerprint && hardware="true"
+true
+
+backend="false"
+fingerprint_stack_present && backend="true"
+true
+
+echo "{\"event\":\"setup-status\",\"hardware\":$hardware,\"backend\":$backend}"

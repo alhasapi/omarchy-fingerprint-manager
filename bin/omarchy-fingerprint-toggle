@@ -1,0 +1,115 @@
+#!/bin/bash
+# omarchy:hidden=true
+#
+# Usage: omarchy-fingerprint-toggle <sudo|polkit|lock> <on|off>
+#
+# Root-only. Invoked via `pkexec` (never run this directly as a normal user --
+# it edits /etc/pam.d files) under the omarchy.fingerprint.toggle polkit
+# action. Since pkexec already runs this as root, it does NOT re-invoke sudo
+# internally, unlike the scripts it's refactored from.
+#
+# This is a line-for-line refactor of setup_pam_config/
+# setup_lock_fingerprint_pam (omarchy-setup-security-fingerprint) and
+# remove_pam_config/remove_lock_fingerprint_pam
+# (omarchy-remove-security-fingerprint), split into independent per-task
+# on/off functions so one task can be toggled without touching the others.
+# Same idempotency guards, same clamshell gate line, same PAM file contents --
+# only the sudo prefix and the task/state dispatch are new.
+
+set -e
+
+task=${1:?usage: omarchy-fingerprint-toggle <sudo|polkit|lock> <on|off>}
+state=${2:?usage: omarchy-fingerprint-toggle <sudo|polkit|lock> <on|off>}
+
+case "$task" in sudo|polkit|lock) ;; *)
+  echo "{\"event\":\"error\",\"message\":\"unknown task: $task\"}"
+  exit 1
+  ;;
+esac
+case "$state" in on|off) ;; *)
+  echo "{\"event\":\"error\",\"message\":\"unknown state: $state\"}"
+  exit 1
+  ;;
+esac
+
+# Same clamshell gate as the setup script: when the lid is shut the reader is
+# unreachable, so it skips fingerprint (success=1) and PAM drops straight to
+# the password prompt instead of blocking on the reader until it times out.
+fprintd_gate="auth      [success=1 default=ignore] pam_exec.so quiet /usr/bin/omarchy-hw-laptop-closed"
+
+# Inserting at line 1 unconditionally shoves any `#%PAM-1.0` header down --
+# it's a harmless comment either way, but the file should keep the header
+# first when there is one. Insert after it instead of before it in that case.
+insert_first_auth_line() {
+  local file="$1" line="$2"
+  if head -n1 "$file" | grep -q '^#%PAM-1\.0'; then
+    sed -i "1a $line" "$file"
+  else
+    sed -i "1i $line" "$file"
+  fi
+}
+
+sudo_on() {
+  if ! grep -q pam_fprintd.so /etc/pam.d/sudo; then
+    insert_first_auth_line /etc/pam.d/sudo 'auth      sufficient pam_fprintd.so'
+  fi
+  if ! grep -q 'omarchy-hw-laptop-closed' /etc/pam.d/sudo; then
+    sed -i "/pam_fprintd\.so/i $fprintd_gate" /etc/pam.d/sudo
+  fi
+}
+
+sudo_off() {
+  sed -i -e '/pam_fprintd\.so/d' -e '/omarchy-hw-laptop-closed/d' /etc/pam.d/sudo
+}
+
+polkit_on() {
+  if [[ ! -f /etc/pam.d/polkit-1 && -f /usr/lib/pam.d/polkit-1 ]]; then
+    # Seed from the vendor default so faillock, the keyring, and everything
+    # else system-auth pulls in survive -- same reasoning as the setup script.
+    cp /usr/lib/pam.d/polkit-1 /etc/pam.d/polkit-1
+  fi
+
+  if [[ -f /etc/pam.d/polkit-1 ]]; then
+    if ! grep -q 'pam_fprintd.so' /etc/pam.d/polkit-1; then
+      insert_first_auth_line /etc/pam.d/polkit-1 'auth      sufficient pam_fprintd.so'
+    fi
+    if ! grep -q 'omarchy-hw-laptop-closed' /etc/pam.d/polkit-1; then
+      sed -i "/pam_fprintd\.so/i $fprintd_gate" /etc/pam.d/polkit-1
+    fi
+  else
+    # No vendor file to seed from -- fall back to a minimal stack that still
+    # routes through system-auth rather than pam_unix directly.
+    tee /etc/pam.d/polkit-1 >/dev/null <<EOF
+$fprintd_gate
+auth      sufficient pam_fprintd.so
+auth      include    system-auth
+
+account   include    system-auth
+password  include    system-auth
+session   include    system-auth
+EOF
+  fi
+}
+
+polkit_off() {
+  # `set -e` sees the exit status of this whole `A && B` list, which is 1
+  # when the file is already absent (A false, B never runs) -- `|| true` on
+  # the same list keeps that a no-op instead of aborting the script.
+  [[ -f /etc/pam.d/polkit-1 ]] && sed -i -e '/pam_fprintd\.so/d' -e '/omarchy-hw-laptop-closed/d' /etc/pam.d/polkit-1 || true
+}
+
+lock_on() {
+  tee /etc/pam.d/omarchy-lock-fingerprint >/dev/null <<'EOF'
+#%PAM-1.0
+auth       required                    pam_fprintd.so
+account    include                     system-local-login
+EOF
+}
+
+lock_off() {
+  rm -f /etc/pam.d/omarchy-lock-fingerprint
+}
+
+"${task}_${state}"
+
+echo "{\"event\":\"toggle-completed\",\"task\":\"$task\",\"state\":\"$state\"}"
