@@ -54,22 +54,83 @@ Then open it from `Setup > Security > Fingerprint Manager`.
 
 ### Keybinding
 
-Optional, and not something the installer does for you — a keybinding is
-personal enough that it belongs in your own config. Add it to
-`~/.config/hypr/bindings.lua`:
+Optional, and the installer deliberately does not do it for you: the polkit action and the menu
+row have no user-facing alternative, but a keybinding is a personal choice that can collide with
+chords the installer cannot see.
+
+**1. Edit `~/.config/hypr/bindings.lua`.** Omarchy ships this file with commented examples, and it
+is the only place you should add bindings — the defaults live in
+`/usr/share/omarchy/default/hypr/bindings/` and are replaced on every update. Add:
 
 ```lua
 o.bind("SUPER + CTRL + ALT + F", "Fingerprint manager", "omarchy-shell shell toggle alhasapi.fingerprint")
 ```
 
-`hyprctl reload` picks it up, and it shows up in `SUPER + K` alongside the
-built-in bindings.
+**2. Reload.** `hyprctl reload` — no logout, no shell restart.
 
-Omarchy puts shell panels on `SUPER + CTRL + <letter>`, but every F chord
-through `SUPER + CTRL + F` is already a tiling binding, so this uses the same
-ALT overflow the Calendar panel does — `SUPER + CTRL + D` is Display, so
-Calendar is `SUPER + CTRL + ALT + D`. Pick a different chord if that one is
-taken on your machine; `omarchy menu keybindings --print` lists what is.
+**3. Check it took:**
+
+```bash
+omarchy menu keybindings --print | grep -i fingerprint
+```
+
+It should also now be listed in the keybindings overlay on `SUPER + K`.
+
+#### Choosing your own chord
+
+`o.bind` takes the chord, the label shown in `SUPER + K` (pass `nil` for none), and the command:
+
+```lua
+o.bind("<chord>", "<Label>", "<command>")
+```
+
+Modifiers are `SUPER`, `CTRL`, `ALT` and `SHIFT`, joined with ` + `. Keys are xkb keysym names,
+which are not always the obvious spelling — Omarchy's own bindings file notes that the comma key is
+`comma` and that `COMMA` silently does not match.
+
+Three commands are useful here. `toggle` is the one you usually want:
+
+| Command | Effect |
+|---|---|
+| `omarchy-shell shell toggle alhasapi.fingerprint` | Opens it, and closes it if it is already open |
+| `omarchy-shell shell summon alhasapi.fingerprint` | Only ever opens it (what the menu row runs) |
+| `omarchy-shell shell hide alhasapi.fingerprint` | Only ever closes it |
+
+Confirm a chord is free before you take it. Hyprland does not reject or warn about a duplicate — it
+runs **both** bindings on every press, so a collision looks like your binding working plus something
+else happening for no reason:
+
+```bash
+omarchy menu keybindings --print | grep -i "ALT + F"
+```
+
+Note the format that listing prints: modifiers are space-separated and only the final key gets a
+`+`, so the binding above appears as `SUPER CTRL ALT + F` and grepping for `CTRL + ALT + F` finds
+nothing.
+
+To take a chord that is already bound, unbind it first in the same file:
+
+```lua
+hl.unbind("SUPER + CTRL + F")
+o.bind("SUPER + CTRL + F", "Fingerprint manager", "omarchy-shell shell toggle alhasapi.fingerprint")
+```
+
+**Why `SUPER + CTRL + ALT + F` and not something shorter.** Omarchy puts shell panels on
+`SUPER + CTRL + <letter>` — Audio is `+A`, Bluetooth `+B`, Network `+W`, Power `+P`. F is not
+available there: `SUPER + F`, `SUPER + CTRL + F` and `SUPER + ALT + F` are all tiling bindings, and
+both SHIFT variants open the file manager. The Calendar panel hits the same wall (`SUPER + CTRL + D`
+is Display) and resolves it with `SUPER + CTRL + ALT + D`, so this follows suit.
+
+#### If the chord does nothing
+
+Run the command in a terminal. If it works there, the binding is the problem — re-check step 3, and
+look for another binding on the same chord. If it fails there too with `plugin not enabled`, the
+plugin is installed but not switched on:
+
+```bash
+omarchy plugin list
+omarchy plugin enable alhasapi.fingerprint
+```
 
 It deliberately takes no bar slot. Every bar widget in Omarchy reports live state — battery
 percentage, network status, container health. This one has nothing to report at a glance; it is a
