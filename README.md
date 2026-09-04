@@ -50,11 +50,26 @@ things that have to happen outside the plugin directory:
    `~/.config/omarchy/extensions/omarchy-menu.jsonc`. Comments in that file are preserved and
    re-running will not duplicate the row.
 
-Then open it from the menu, or bind it:
+Then open it from `Setup > Security > Fingerprint Manager`.
 
-```bash
-omarchy-shell shell summon alhasapi.fingerprint
+### Keybinding
+
+Optional, and not something the installer does for you — a keybinding is
+personal enough that it belongs in your own config. Add it to
+`~/.config/hypr/bindings.lua`:
+
+```lua
+o.bind("SUPER + CTRL + ALT + F", "Fingerprint manager", "omarchy-shell shell toggle alhasapi.fingerprint")
 ```
+
+`hyprctl reload` picks it up, and it shows up in `SUPER + K` alongside the
+built-in bindings.
+
+Omarchy puts shell panels on `SUPER + CTRL + <letter>`, but every F chord
+through `SUPER + CTRL + F` is already a tiling binding, so this uses the same
+ALT overflow the Calendar panel does — `SUPER + CTRL + D` is Display, so
+Calendar is `SUPER + CTRL + ALT + D`. Pick a different chord if that one is
+taken on your machine; `omarchy menu keybindings --print` lists what is.
 
 It deliberately takes no bar slot. Every bar widget in Omarchy reports live state — battery
 percentage, network status, container health. This one has nothing to report at a glance; it is a
@@ -67,7 +82,8 @@ omarchy plugin disable alhasapi.fingerprint
 sudo rm /usr/share/polkit-1/actions/omarchy.fingerprint.toggle.policy
 ```
 
-and delete the `setup.security.fingerprint-manager` row from your menu extensions file.
+and delete the `setup.security.fingerprint-manager` row from your menu extensions file, plus the
+keybinding if you added one.
 
 ## What it does
 
