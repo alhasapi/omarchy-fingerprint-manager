@@ -4,7 +4,7 @@ An Omarchy panel for managing fingerprint authentication after it is set up: whi
 enrolled, adding and removing them, and which system tasks accept a fingerprint instead of a
 password.
 
-![The settings screen: a switch per task, and the danger zone](docs/screenshot.png)
+![The panel: enrolled fingers, with add and remove-all](docs/screenshot.png)
 
 ## Why
 
@@ -89,6 +89,8 @@ than a shortcut: `net.reactivated.Fprint` has no per-finger delete at all. See
 [docs/DESIGN.md](docs/DESIGN.md). To drop one finger, remove all and re-enroll the ones you keep.
 
 **Use fingerprint for** — behind the gear icon — is a switch per task:
+
+![The settings screen: a switch per task, and the danger zone](docs/screenshot-settings.png)
 
 | Task | What toggling it changes |
 |---|---|
